@@ -17,8 +17,58 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: dukascopy-cross-asset-v5-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  aux:
+    name: Download ${{ matrix.instrument }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        instrument: [eurusd, usdjpy, xagusd]
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install isolated Dukascopy client
+        run: |
+          mkdir -p tmp_duka_v5/work
+          npm --prefix tmp_duka_v5/work install dukascopy-node@1.50.0
+
+      - name: Decode and validate downloader
+        run: |
+          base64 --decode tmp_duka_v5/downloader.js.gz.b64 | gzip -dc > tmp_duka_v5/work/downloader.js
+          node --check tmp_duka_v5/work/downloader.js
+          sha256sum tmp_duka_v5/work/downloader.js
+
+      - name: Download one Dukascopy auxiliary series
+        run: |
+          mkdir -p tmp_duka_v5/work/aux
+          node tmp_duka_v5/work/downloader.js tmp_duka_v5/work/aux "${{ matrix.instrument }}"
+          test -s "tmp_duka_v5/work/aux/${{ matrix.instrument }}_bid_d1.csv"
+          head -n 2 "tmp_duka_v5/work/aux/${{ matrix.instrument }}_bid_d1.csv"
+          wc -l "tmp_duka_v5/work/aux/${{ matrix.instrument }}_bid_d1.csv"
+
+      - name: Upload auxiliary series
+        uses: actions/upload-artifact@v4
+        with:
+          name: duka-aux-${{ matrix.instrument }}
+          path: tmp_duka_v5/work/aux/${{ matrix.instrument }}_bid_d1.csv
+          if-no-files-found: error
+          retention-days: 7
+
   research:
+    name: Run locked cross-asset research
+    needs: aux
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -30,31 +80,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip pandas numpy
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip pandas numpy
-          mkdir -p tmp_duka_v5/work
-          npm --prefix tmp_duka_v5/work install dukascopy-node@1.50.0
-
-      - name: Decode and validate scripts
+      - name: Decode and validate research scripts
         run: |
           mkdir -p tmp_duka_v5/work
           base64 --decode tmp_duka_v3/base_v1.py.gz.b64 | gzip -dc > tmp_duka_v5/work/base.py
           cat tmp_duka_v5/parts/part_* > tmp_duka_v5/work/research.py.gz.b64
           test "$(wc -c < tmp_duka_v5/work/research.py.gz.b64)" -eq 8420
           base64 --decode tmp_duka_v5/work/research.py.gz.b64 | gzip -dc > tmp_duka_v5/work/research.py
-          base64 --decode tmp_duka_v5/downloader.js.gz.b64 | gzip -dc > tmp_duka_v5/work/downloader.js
           python -m py_compile tmp_duka_v5/work/base.py tmp_duka_v5/work/research.py
-          node --check tmp_duka_v5/work/downloader.js
-          sha256sum tmp_duka_v5/work/base.py tmp_duka_v5/work/research.py tmp_duka_v5/work/downloader.js
+          sha256sum tmp_duka_v5/work/base.py tmp_duka_v5/work/research.py
 
-      - name: Download Dukascopy auxiliary daily data
-        run: node tmp_duka_v5/work/downloader.js tmp_duka_v5/work/aux
+      - name: Download and merge auxiliary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: duka-aux-*
+          path: tmp_duka_v5/work/aux
+          merge-multiple: true
+
+      - name: Verify auxiliary inputs
+        run: |
+          for instrument in eurusd usdjpy xagusd; do
+            file="tmp_duka_v5/work/aux/${instrument}_bid_d1.csv"
+            test -s "$file"
+            echo "[$instrument] $(wc -l < "$file") lines"
+            head -n 2 "$file"
+          done
 
       - name: Run bounded cross-asset research
         run: |
@@ -95,6 +148,5 @@ jobs:
             tmp_duka_v5/work/run.log
             tmp_duka_v5/work/results
             tmp_duka_v5/work/research.py
-            tmp_duka_v5/work/downloader.js
           if-no-files-found: warn
           retention-days: 7
