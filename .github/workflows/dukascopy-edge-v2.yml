@@ -1,0 +1,79 @@
+name: Dukascopy Edge Discovery v2
+
+on:
+  push:
+    branches:
+      - dukascopy-edge-v2-20260818
+    paths:
+      - "tmp_duka_v2/**"
+      - ".github/workflows/dukascopy-edge-v2.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "tmp_duka_v2/**"
+      - ".github/workflows/dukascopy-edge-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy scikit-learn
+
+      - name: Decode and compile frozen script
+        run: |
+          mkdir -p tmp_duka_v2/work
+          base64 --decode tmp_duka_v2/dukascopy_edge_discovery_v2.py.gz.b64 | gzip -dc > tmp_duka_v2/work/research.py
+          python -m py_compile tmp_duka_v2/work/research.py
+          sha256sum tmp_duka_v2/work/research.py
+
+      - name: Run bounded walk-forward discovery
+        run: |
+          set -o pipefail
+          python tmp_duka_v2/work/research.py \
+            --start 2016-01 \
+            --end 2026-05 \
+            --data-dir tmp_duka_v2/work/data \
+            --out-dir tmp_duka_v2/work/results \
+            2>&1 | tee tmp_duka_v2/work/run.log
+
+      - name: Print results
+        if: always()
+        run: |
+          echo "===== RUN LOG TAIL ====="
+          tail -n 240 tmp_duka_v2/work/run.log 2>/dev/null || true
+          echo "===== REPORT ====="
+          cat tmp_duka_v2/work/results/REPORT.md 2>/dev/null || true
+          echo "===== SUMMARY ====="
+          cat tmp_duka_v2/work/results/summary.json 2>/dev/null || true
+          echo "===== DEVELOPMENT TOP 20 ====="
+          head -n 21 tmp_duka_v2/work/results/development_grid.csv 2>/dev/null || true
+          echo "===== CONFIRMATION ====="
+          cat tmp_duka_v2/work/results/confirmation_results.csv 2>/dev/null || true
+          echo "===== LOCKED OOS ====="
+          cat tmp_duka_v2/work/results/locked_oos_results.csv 2>/dev/null || true
+
+      - name: Upload research outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dukascopy-edge-v2-results
+          path: |
+            tmp_duka_v2/work/run.log
+            tmp_duka_v2/work/results
+            tmp_duka_v2/work/research.py
+          if-no-files-found: warn
+          retention-days: 7
