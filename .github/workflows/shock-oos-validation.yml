@@ -1,0 +1,73 @@
+name: Shock OOS Validation
+
+on:
+  push:
+    branches:
+      - shock-oos-validation-20260818
+    paths:
+      - "tmp_validation/**"
+      - ".github/workflows/shock-oos-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy
+
+      - name: Decode frozen validation pack
+        run: |
+          mkdir -p tmp_validation/work
+          base64 --decode tmp_validation/validation_pack.zip.b64 > tmp_validation/work/validation_pack.zip
+          unzip -q tmp_validation/work/validation_pack.zip -d tmp_validation/work/pack
+          python -m py_compile tmp_validation/work/pack/validate_shock_reversal_dukascopy.py
+
+      - name: Run primary blind test
+        run: |
+          set -o pipefail
+          python tmp_validation/work/pack/validate_shock_reversal_dukascopy.py \
+            --start 2024-01 \
+            --end 2026-02 \
+            --data-dir tmp_validation/work/dukascopy_xauusd_m1 \
+            --out-dir tmp_validation/work/results_PRIMARY_2024_01_to_2026_02 \
+            2>&1 | tee tmp_validation/work/run.log
+
+      - name: Print machine-readable results
+        if: always()
+        run: |
+          echo "===== RUN LOG TAIL ====="
+          tail -n 160 tmp_validation/work/run.log 2>/dev/null || true
+          echo "===== METADATA ====="
+          cat tmp_validation/work/results_PRIMARY_2024_01_to_2026_02/run_metadata.json 2>/dev/null || true
+          echo "===== COST SENSITIVITY ====="
+          cat tmp_validation/work/results_PRIMARY_2024_01_to_2026_02/cost_sensitivity.csv 2>/dev/null || true
+          echo "===== BY YEAR ====="
+          cat tmp_validation/work/results_PRIMARY_2024_01_to_2026_02/by_year.csv 2>/dev/null || true
+          echo "===== BY SERVER HOUR ====="
+          cat tmp_validation/work/results_PRIMARY_2024_01_to_2026_02/by_server_hour.csv 2>/dev/null || true
+          echo "===== BY DIRECTION ====="
+          cat tmp_validation/work/results_PRIMARY_2024_01_to_2026_02/by_direction.csv 2>/dev/null || true
+
+      - name: Upload validation outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shock-oos-primary-results
+          path: |
+            tmp_validation/work/run.log
+            tmp_validation/work/results_PRIMARY_2024_01_to_2026_02
+          if-no-files-found: warn
+          retention-days: 7
