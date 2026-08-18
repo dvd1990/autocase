@@ -36,10 +36,7 @@ jobs:
       - name: Decode scripts
         run: |
           mkdir -p tmp_duka_v3/work
-          curl -L --fail --retry 3 \
-            https://raw.githubusercontent.com/dvd1990/autocase/dukascopy-edge-discovery-v1-20260818/tmp_duka_edge_v1/research.py.gz.b64 \
-            -o tmp_duka_v3/work/base.py.gz.b64
-          base64 --decode tmp_duka_v3/work/base.py.gz.b64 | gzip -dc > tmp_duka_v3/work/duka_base_v1.py
+          base64 --decode tmp_duka_v3/base_v1.py.gz.b64 | gzip -dc > tmp_duka_v3/work/duka_base_v1.py
           base64 --decode tmp_duka_v3/barrier_v3.py.gz.b64 | gzip -dc > tmp_duka_v3/work/barrier_v3.py
           python -m py_compile tmp_duka_v3/work/duka_base_v1.py tmp_duka_v3/work/barrier_v3.py
           sha256sum tmp_duka_v3/work/duka_base_v1.py tmp_duka_v3/work/barrier_v3.py
