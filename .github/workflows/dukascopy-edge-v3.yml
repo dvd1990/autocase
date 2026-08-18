@@ -34,10 +34,12 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip pandas numpy
 
-      - name: Decode and verify frozen research script
+      - name: Reassemble and verify frozen research script
         run: |
           mkdir -p tmp_duka_edge_v3/work
-          base64 --decode tmp_duka_edge_v3/research.py.gz.b64 | gunzip > tmp_duka_edge_v3/work/research.py
+          cat tmp_duka_edge_v3/chunks/part_* > tmp_duka_edge_v3/work/research.py.gz.b64
+          echo "0da249c28ff1e24bf4babfc38aaabe2711dbbef269652b583b4f8a871d1e2a9d  tmp_duka_edge_v3/work/research.py.gz.b64" | sha256sum -c -
+          base64 --decode tmp_duka_edge_v3/work/research.py.gz.b64 | gunzip > tmp_duka_edge_v3/work/research.py
           echo "cd57931d06fd83fa2ac74f4c66c418f3ed8dcea4e7ea848715930fb752c3ae3e  tmp_duka_edge_v3/work/research.py" | sha256sum -c -
           python -m py_compile tmp_duka_edge_v3/work/research.py
 
