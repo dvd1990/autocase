@@ -1,0 +1,82 @@
+name: Dukascopy Edge Discovery v1
+
+on:
+  push:
+    branches:
+      - dukascopy-edge-discovery-v1-20260818
+    paths:
+      - "tmp_duka_edge_v1/**"
+      - ".github/workflows/dukascopy-edge-v1.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "tmp_duka_edge_v1/**"
+      - ".github/workflows/dukascopy-edge-v1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy
+
+      - name: Recover and verify frozen research script
+        run: |
+          mkdir -p tmp_duka_edge_v1/work
+          curl -fsSL "https://raw.githubusercontent.com/dvd1990/autocase/d7644f641c6756f186369dc99cd7d8c74ec08753/tmp_duka_edge_v1/research.py.gz.b64" -o tmp_duka_edge_v1/work/research.py.gz.b64
+          base64 --decode tmp_duka_edge_v1/work/research.py.gz.b64 | gunzip > tmp_duka_edge_v1/work/research.py
+          echo "ae4b131c6110dc9c815e1e3d3200da192dec0792424ef99417335969818fc614  tmp_duka_edge_v1/work/research.py" | sha256sum -c -
+          python -m py_compile tmp_duka_edge_v1/work/research.py
+
+      - name: Run bounded edge discovery
+        run: |
+          set -o pipefail
+          python tmp_duka_edge_v1/work/research.py \
+            --start 2016-01 \
+            --end 2026-05 \
+            --data-dir tmp_duka_edge_v1/work/data \
+            --out-dir tmp_duka_edge_v1/work/results \
+            2>&1 | tee tmp_duka_edge_v1/work/run.log
+
+      - name: Print key outputs
+        if: always()
+        run: |
+          echo "===== RUN LOG TAIL ====="
+          tail -n 260 tmp_duka_edge_v1/work/run.log 2>/dev/null || true
+          echo "===== SUMMARY ====="
+          cat tmp_duka_edge_v1/work/results/summary.json 2>/dev/null || true
+          echo "===== REPORT ====="
+          cat tmp_duka_edge_v1/work/results/REPORT.md 2>/dev/null || true
+          echo "===== SURVIVORS HEAD ====="
+          head -n 31 tmp_duka_edge_v1/work/results/survivors_train_validation.csv 2>/dev/null || true
+          echo "===== COST STRESS ====="
+          cat tmp_duka_edge_v1/work/results/selected_oos_cost_stress.csv 2>/dev/null || true
+          echo "===== DISK ====="
+          du -sh tmp_duka_edge_v1/work/* 2>/dev/null || true
+
+      - name: Upload research outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dukascopy-edge-discovery-v1-results
+          path: |
+            tmp_duka_edge_v1/work/run.log
+            tmp_duka_edge_v1/work/research.py
+            tmp_duka_edge_v1/work/results
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
