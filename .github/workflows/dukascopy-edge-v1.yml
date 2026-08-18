@@ -34,12 +34,35 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip pandas numpy
 
-      - name: Decode and validate research script
+      - name: Recover verified script and allow only terminal partial month
         run: |
           mkdir -p tmp_duka_edge_v1/work
-          base64 --decode tmp_duka_edge_v1/research.py.gz.b64 | gunzip > tmp_duka_edge_v1/work/research.py
+          curl -fsSL "https://raw.githubusercontent.com/dvd1990/autocase/d7644f641c6756f186369dc99cd7d8c74ec08753/tmp_duka_edge_v1/research.py.gz.b64" -o tmp_duka_edge_v1/work/research.py.gz.b64
+          base64 --decode tmp_duka_edge_v1/work/research.py.gz.b64 | gunzip > tmp_duka_edge_v1/work/research.py
+          echo "ae4b131c6110dc9c815e1e3d3200da192dec0792424ef99417335969818fc614  tmp_duka_edge_v1/work/research.py" | sha256sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("tmp_duka_edge_v1/work/research.py")
+          s = p.read_text(encoding="utf-8")
+          s = s.replace(
+              "def ensure_month(data_dir: Path, month: Month, skip_download: bool = False) -> None:\n",
+              "def ensure_month(data_dir: Path, month: Month, skip_download: bool = False, allow_partial: bool = False) -> None:\n",
+              1,
+          )
+          s = s.replace(
+              "        ok, detail = validate_csv(path, month)\n",
+              "        ok, detail = validate_csv(path, month, allow_partial=allow_partial)\n",
+              2,
+          )
+          old = "    months = list(iter_months(args.start, args.end))\n    for i, month in enumerate(months, 1):\n        ensure_month(args.data_dir, month, skip_download=args.skip_download)\n"
+          new = "    months = list(iter_months(args.start, args.end))\n    for i, month in enumerate(months, 1):\n        ensure_month(\n            args.data_dir,\n            month,\n            skip_download=args.skip_download,\n            allow_partial=(month == months[-1]),\n        )\n"
+          if old not in s:
+              raise SystemExit("main loop patch target missing")
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
+          PY
+          echo "db6d7e24eca8a7b8fc52810d97322f5a766ee4aa1d40f21cd98e8e36db17a5cc  tmp_duka_edge_v1/work/research.py" | sha256sum -c -
           python -m py_compile tmp_duka_edge_v1/work/research.py
-          sha256sum tmp_duka_edge_v1/work/research.py
 
       - name: Run bounded edge discovery
         run: |
