@@ -37,7 +37,9 @@ jobs:
         run: |
           mkdir -p tmp_duka_v4/work
           base64 --decode tmp_duka_v3/base_v1.py.gz.b64 | gzip -dc > tmp_duka_v4/work/duka_base_v1.py
-          base64 --decode tmp_duka_v4/session_structure_v4.py.gz.b64 | gzip -dc > tmp_duka_v4/work/session_v4.py
+          cat tmp_duka_v4/parts/part_* > tmp_duka_v4/work/session_v4.py.gz.b64
+          test "$(wc -c < tmp_duka_v4/work/session_v4.py.gz.b64)" -eq 8584
+          base64 --decode tmp_duka_v4/work/session_v4.py.gz.b64 | gzip -dc > tmp_duka_v4/work/session_v4.py
           python -m py_compile tmp_duka_v4/work/duka_base_v1.py tmp_duka_v4/work/session_v4.py
           sha256sum tmp_duka_v4/work/duka_base_v1.py tmp_duka_v4/work/session_v4.py
 
