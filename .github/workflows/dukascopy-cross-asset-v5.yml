@@ -38,7 +38,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip pandas numpy
-          npm install dukascopy-node@1.43.3
+          mkdir -p tmp_duka_v5/work
+          npm --prefix tmp_duka_v5/work install dukascopy-node@1.43.3
 
       - name: Decode and validate scripts
         run: |
